@@ -15,9 +15,18 @@ enum ENUM_STATUS
  DISABLE       // Disable
 };
 
+enum ENUM_ALERT
+{
+ POPUP,       // Popup and Sound
+ SOUND,       // Sound
+ EMAIL,       // Email
+ NOTI         // Notification
+};
+
 input group "DATA"
 input ENUM_TIMEFRAMES       PeriodType       = PERIOD_CURRENT;       // Period
 input ENUM_STATUS           BidAsk_Status    = ENABLE;               // Bid & Ask
+input ENUM_ALERT            AlertType        = POPUP;                // Alert Type
 
 input group "ALERT"
 input ENUM_STATUS           Diverg_Status    = ENABLE;               // Delta divergence
@@ -105,25 +114,64 @@ int OnCalculate(const int           rates_total,
 void onAlert()
   {
    //-- Delta Divergence Alert
-   if(delta == 0)
+   if(Diverg_Status == ENABLE)
      {
-      diverg_alert = true;
-     }
-   if(Diverg_Status == ENABLE && diverg_alert)
-     {
-      double open = iOpen(_Symbol, PeriodType, 0);
+      //+------------------------------------------------------------+
+      double open  = iOpen(_Symbol, PeriodType, 0);
       double close = iClose(_Symbol, PeriodType, 0);
-      if(close > open && delta < 0)
+      //+------------------------------------------------------------+
+
+      bool isBullishCandle = (close > open);
+      bool isBearishCandle = (close < open);
+
+      if(diverg_alert)
         {
-         Alert("Negative Delta divergence");
-         diverg_alert = false;
+         if((isBullishCandle && delta < 0) || (isBearishCandle && delta > 0))
+           {
+            string alertType = isBullishCandle ? "Negative" : "Positive";
+            string textAlert = alertType + " Delta divergence";
+            if(!SendAlert(textAlert))
+              {
+               Alert("Failed to send alert via " + EnumToString(AlertType));
+              }
+            diverg_alert = false;
+           }
         }
-      else if(close < open && delta > 0)
+      else
         {
-         Alert("Positive Delta divergence");
-         diverg_alert = false;
+         if((isBullishCandle && delta > 0) || (isBearishCandle && delta < 0))
+           {
+            diverg_alert = true;
+           }
         }
      }
+  }
+//+------------------------------------------------------------------+
+//| Sends an alert based on the specified alert type                 |
+//+------------------------------------------------------------------+
+bool SendAlert(string text)
+  {
+   bool success = false;
+   if(AlertType == POPUP)
+     {
+      Alert(text);
+      success = true;
+     }
+   else if(AlertType == SOUND)
+     {
+      PlaySound("alert.wav");
+      Print("Alert: " + text);
+      success = true;
+     }
+   else if(AlertType == EMAIL)
+     {
+      success = SendMail("Delta (" + _Symbol + ") Alert", text);
+     }
+   else if(AlertType == NOTI)
+     {
+      success = SendNotification(text);
+     }
+   return success;   
   }
 //+------------------------------------------------------------------+
 //| Custom indicator Construction object function                    |
