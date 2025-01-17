@@ -5,46 +5,45 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2024, FaceND"
 #property link      "https://github.com/FaceND/Delta"
-#property strict
 #property indicator_chart_window
 #property indicator_plots 0
+#property strict
 
 enum ENUM_STATUS
 {
- ENABLE,       // Enable
- DISABLE       // Disable
+ ENABLE,   // Enable
+ DISABLE   // Disable
 };
 
 enum ENUM_ALERT
 {
- POPUP,       // Popup and Sound
- SOUND,       // Sound
- EMAIL,       // Email
- NOTI         // Notification
+ POPUP,   // Popup and Sound
+ SOUND,   // Sound
+ EMAIL,   // Email
+ NOTI     // Notification
 };
 
-input group "DATA"
-input ENUM_TIMEFRAMES       PeriodType       = PERIOD_CURRENT;       // Period
-input ENUM_STATUS           BidAsk_Status    = ENABLE;               // Bid & Ask
-input ENUM_ALERT            AlertType        = POPUP;                // Alert Type
+input group "SETTINGS"
+input ENUM_STATUS           BidAsk_Status    = ENABLE;             // Show Bid & Ask
+input ENUM_ALERT            AlertType        = POPUP;              // Alert type
 
 input group "ALERT"
-input ENUM_STATUS           Diverg_Status    = ENABLE;               // Delta divergence
+input ENUM_STATUS           Diverg_Status    = DISABLE;            // Delta divergence
 
 input group "POSITION"
-input ENUM_BASE_CORNER      CornerPosition   = CORNER_LEFT_UPPER;    // Position
-input int                   X_Distance       = 10;                   // X distance from the corner
-input int                   Y_Distance       = 20;                   // Y distance from the corner
+input ENUM_BASE_CORNER      CornerPosition   = CORNER_LEFT_UPPER;  // Position
+input int                   X_Distance       = 10;        // X distance from the corner
+input int                   Y_Distance       = 20;        // Y distance from the corner
 
 input group "STYLE"
-input color                 PosColor         = clrLimeGreen;         // Positive color
-input color                 NegColor         = clrRed;               // Negative color
-input color                 TextColor        = clrWhite;             // Text color
-input int                   FontSize         = 10;                   // Font size
+input color                 PosColor         = clrLimeGreen;       // Positive color
+input color                 NegColor         = clrRed;             // Negative color
+input color                 TextColor        = clrWhite;           // Text color
+input int                   FontSize         = 10;                 // Font size
 
 MqlTick ticks[];
 
-string obj_delta_name   = "Delta";
+string obj_delta_label   = "Delta";
 string obj_delta_volume = "DeltaVolume";
 
 string obj_bid_volume   = "BidVolume";
@@ -54,7 +53,13 @@ long delta = 0;
 long bid = 0;
 long ask = 0;
 
+long previous_count = 0;
+
+bool is_previous_price_set = false;
+double previous_price = 0.0;
+
 bool diverg_alert = true;
+int bars;
 
 color ResultColor, _PosColor, _NegColor;
 //+------------------------------------------------------------------+
@@ -68,7 +73,7 @@ int OnInit()
    diverg_alert = true;
 
    //-- Delta
-   CreateObject(obj_delta_name, obj_delta_name, TextColor);
+   CreateObject(obj_delta_label, obj_delta_label, TextColor);
    CreateObject(obj_delta_volume, NULL, TextColor);
 
    //-- Bid & Ask
@@ -84,7 +89,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
-   ObjectDelete(0, obj_delta_name);
+   ObjectDelete(0, obj_delta_label);
    ObjectDelete(0, obj_delta_volume);
 
    ObjectDelete(0, obj_bid_volume);
@@ -117,8 +122,8 @@ void onAlert()
    if(Diverg_Status == ENABLE)
      {
       //+------------------------------------------------------------+
-      double open  = iOpen(_Symbol, PeriodType, 0);
-      double close = iClose(_Symbol, PeriodType, 0);
+      double open  = iOpen(_Symbol, _Period, 0);
+      double close = iClose(_Symbol, _Period, 0);
       //+------------------------------------------------------------+
 
       bool isBullishCandle = (close > open);
@@ -147,31 +152,38 @@ void onAlert()
      }
   }
 //+------------------------------------------------------------------+
-//| Sends an alert based on the specified alert type                 |
+//| Function to sends an alert based on the specified alert type     |
 //+------------------------------------------------------------------+
-bool SendAlert(string text)
+bool SendAlert(const string text)
   {
    bool success = false;
-   if(AlertType == POPUP)
+
+   switch (AlertType)
      {
-      Alert(text);
-      success = true;
+      case POPUP:
+         Alert(text);
+         success = true;
+         break;
+
+      case SOUND:
+         PlaySound("alert.wav");
+         Print("Alert: " + text);
+         success = true;
+         break;
+
+      case EMAIL:
+         success = SendMail("Delta (" + _Symbol + ") Alert", text);
+         break;
+
+      case NOTI:
+         success = SendNotification(text);
+         break;
+
+      default:
+         Print("Invalid AlertType: " + IntegerToString(AlertType));
+         break;
      }
-   else if(AlertType == SOUND)
-     {
-      PlaySound("alert.wav");
-      Print("Alert: " + text);
-      success = true;
-     }
-   else if(AlertType == EMAIL)
-     {
-      success = SendMail("Delta (" + _Symbol + ") Alert", text);
-     }
-   else if(AlertType == NOTI)
-     {
-      success = SendNotification(text);
-     }
-   return success;   
+   return success;
   }
 //+------------------------------------------------------------------+
 //| Custom indicator Construction object function                    |
@@ -199,86 +211,126 @@ void CreateObject(const string          name,
      }
   }
 //+------------------------------------------------------------------+
-//| Updates the data delta                                           |
+//| Function to updates the delta data                               |
 //+------------------------------------------------------------------+
 void UpdateDelta()
   {
    ArrayFree(ticks);
-
-   long count = CopyTicksRange(_Symbol, ticks, COPY_TICKS_ALL, 
-                              ulong(iTime(_Symbol, PeriodType, 0)) * 1000, 
-                              ulong(TimeCurrent()) * 1000);
-
-   double previous_price = NULL;
-
-   delta = 0;
-   ask = 0;
-   bid = 0;
-
+   //+---------------------------------------------------------------+
+   long count = CopyTicksRange(_Symbol, ticks, COPY_TICKS_TIME_MS, 
+                  ulong(iTime(_Symbol, _Period, 0)) * 1000);
+   //+---------------------------------------------------------------+
+   if(IsNewBar())
+     {
+      ResetValues();
+     }
    if(count > 0)
      {
-      for(int i = 0; i < count; i++)
+      for(long i = previous_count; i < count; i++)
         {
-         if(previous_price == NULL)
-           {
-            previous_price = ticks[i].bid;
-           }
-         else
-           {
-            //-- Bid [/]
-            if(previous_price < ticks[i].bid)
-              {
-               delta += 1;
-               bid += 1;
-              }
-            //-- Ask [\]
-            else if(previous_price > ticks[i].bid)
-              {
-               delta -= 1;
-               ask += 1;
-              }
-            previous_price = ticks[i].bid;
-           }
+         CalculateDelta(ticks[i].bid);
         }
+      previous_count = count;
      }
    SetDeltaObject();
   }
 //+------------------------------------------------------------------+
-//| Sets up the delta object                                         |
+//| Function to calculate the delta, bid and ask                     |
+//+------------------------------------------------------------------+ 
+void CalculateDelta(const double current_price)
+  {
+   if(!is_previous_price_set)
+     {
+      previous_price = iClose(_Symbol, _Period, 1);
+      is_previous_price_set = true;
+     }
+   //-- Bid [/]
+   if(previous_price < current_price)
+     {
+      delta += 1;
+      bid += 1;
+     }
+   //-- Ask [\]
+   else if(previous_price > current_price)
+     {
+      delta -= 1;
+      ask += 1;
+     }
+   previous_price = current_price;
+  }
+//+------------------------------------------------------------------+
+//| Function to sets up the delta object                             |
 //+------------------------------------------------------------------+
 void SetDeltaObject()
   {
-   //-- Positive
+   //-- Positive delta
    if(delta > 0)
      {
       ResultColor = _PosColor;
      }
-   //-- Negative
+   //-- Negative delta
    else if(delta < 0)
      {
       ResultColor = _NegColor;
      }
-   //-- Neutral
+   //-- Neutral delta
    else
      {
       ResultColor = TextColor;
      }
-   ObjectSetInteger(0, obj_delta_volume, OBJPROP_COLOR, ResultColor);
-   ObjectSetString (0, obj_delta_volume, OBJPROP_TEXT, "          " + FormatVolume(delta));
+
+   //-- Delta (color) object
+   ObjectSetInteger(0, obj_delta_volume, 
+      OBJPROP_COLOR, ResultColor);
+   //-- Delta (text) object
+   ObjectSetString (0, obj_delta_volume, 
+      OBJPROP_TEXT, "           " + FormatVolume(delta));
 
    if(BidAsk_Status == ENABLE)
      {
-      ObjectSetString(0, obj_bid_volume, OBJPROP_TEXT,TextToSpaces(ObjectGetString(0, obj_delta_volume,OBJPROP_TEXT)) + "      " + FormatVolume(bid));
-      ObjectSetString(0, obj_ask_volume, OBJPROP_TEXT,TextToSpaces(ObjectGetString(0, obj_bid_volume,OBJPROP_TEXT)) + "        " + FormatVolume(ask));
+      //-- Bid object
+      ObjectSetString(0, obj_bid_volume, OBJPROP_TEXT,
+         TextToSpaces(ObjectGetString(0, obj_delta_volume, 
+            OBJPROP_TEXT)) + "  " + FormatVolume(bid));
+
+      //-- Ask object
+      ObjectSetString(0, obj_ask_volume, OBJPROP_TEXT,
+         TextToSpaces(ObjectGetString(0, obj_bid_volume,   
+            OBJPROP_TEXT)) + "   " + FormatVolume(ask));
      }
+  }
+//+------------------------------------------------------------------+
+//| Function to resets the values for a new bar                      |
+//+------------------------------------------------------------------+  
+void ResetValues()
+  {
+   delta = 0;
+   ask = 0;
+   bid = 0;
+
+   previous_count = 0;
+   is_previous_price_set = false;
+  }
+//+------------------------------------------------------------------+
+//| Function to check for the creation of a new bar                  |
+//+------------------------------------------------------------------+
+bool IsNewBar()
+  {
+   int bar_now = Bars(_Symbol, _Period);
+   if(bars != bar_now)
+     {
+      bars = bar_now;
+      return(true);
+     }
+   return(false);
   }
 //+------------------------------------------------------------------+
 //| Function to format volume value                                  |
 //+------------------------------------------------------------------+
-string FormatVolume(long volume)
+string FormatVolume(const long volume)
   {
    string formattedVolume;
-   if(MathAbs(volume) >= 1000)
+   if(volume >= 1000)
      {
       formattedVolume = DoubleToString(volume/1000.0, 3) + "K";
      }
@@ -291,9 +343,9 @@ string FormatVolume(long volume)
 //+------------------------------------------------------------------+
 //| Converts a given text to spaces                                  |
 //+------------------------------------------------------------------+
-string TextToSpaces(string text)
+string TextToSpaces(const string text)
   {
-   int length = StringLen(text);
+   int length = StringLen(text) + (FontSize-1);
    string result = "";
 
    for(int i = 0; i < length; i++)
