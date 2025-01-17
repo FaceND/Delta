@@ -43,7 +43,7 @@ input int                   FontSize         = 10;                 // Font size
 
 MqlTick ticks[];
 
-string obj_delta_label   = "Delta";
+string obj_delta_label  = "Delta";
 string obj_delta_volume = "DeltaVolume";
 
 string obj_bid_volume   = "BidVolume";
