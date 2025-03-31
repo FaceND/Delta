@@ -17,18 +17,21 @@ enum ENUM_STATUS
 
 enum ENUM_ALERT
 {
- POPUP,   // Popup and Sound
- SOUND,   // Sound
- EMAIL,   // Email
- NOTI     // Notification
+ POPUP,    // Popup and Sound
+ SOUND,    // Sound
+ EMAIL,    // Email
+ NOTI      // Notification
 };
 
-input group "SETTINGS"
-input ENUM_STATUS           BidAsk_Status    = ENABLE;             // Show Bid & Ask
+input group "DATA"
+input ENUM_TIMEFRAMES       RangePeriod      = PERIOD_CURRENT;     // Range Period
+
+input group "OPTION"
+input ENUM_STATUS           ShowBidAsk       = DISABLE;            // Show Bid & Ask
 input ENUM_ALERT            AlertType        = POPUP;              // Alert type
 
 input group "ALERT"
-input ENUM_STATUS           Diverg_Status    = DISABLE;            // Delta divergence
+input ENUM_STATUS           DivergStatus     = DISABLE;            // Delta divergence
 
 input group "POSITION"
 input ENUM_BASE_CORNER      CornerPosition   = CORNER_LEFT_UPPER;  // Position
@@ -77,7 +80,7 @@ int OnInit()
    CreateObject(obj_delta_volume, NULL, TextColor);
 
    //-- Bid & Ask
-   if(BidAsk_Status == ENABLE)
+   if(ShowBidAsk == ENABLE)
      {
       CreateObject(obj_bid_volume, NULL, _PosColor);
       CreateObject(obj_ask_volume, NULL, _NegColor);
@@ -119,11 +122,11 @@ int OnCalculate(const int           rates_total,
 void onAlert()
   {
    //-- Delta Divergence Alert
-   if(Diverg_Status == ENABLE)
+   if(DivergStatus == ENABLE)
      {
       //+------------------------------------------------------------+
-      double open  = iOpen(_Symbol, _Period, 0);
-      double close = iClose(_Symbol, _Period, 0);
+      double open  = iOpen(_Symbol, RangePeriod, 0);
+      double close = iClose(_Symbol, RangePeriod, 0);
       //+------------------------------------------------------------+
 
       bool isBullishCandle = (close > open);
@@ -218,7 +221,7 @@ void UpdateDelta()
    ArrayFree(ticks);
    //+---------------------------------------------------------------+
    long count = CopyTicksRange(_Symbol, ticks, COPY_TICKS_TIME_MS, 
-                  ulong(iTime(_Symbol, _Period, 0)) * 1000);
+                  ulong(iTime(_Symbol, RangePeriod, 0)) * 1000);
    //+---------------------------------------------------------------+
    if(IsNewBar())
      {
@@ -241,7 +244,7 @@ void CalculateDelta(const double current_price)
   {
    if(!is_previous_price_set)
      {
-      previous_price = iClose(_Symbol, _Period, 1);
+      previous_price = iClose(_Symbol, RangePeriod, 1);
       is_previous_price_set = true;
      }
    //-- Bid [/]
@@ -286,7 +289,7 @@ void SetDeltaObject()
    ObjectSetString (0, obj_delta_volume, 
       OBJPROP_TEXT, "           " + FormatVolume(delta));
 
-   if(BidAsk_Status == ENABLE)
+   if(ShowBidAsk == ENABLE)
      {
       //-- Bid object
       ObjectSetString(0, obj_bid_volume, OBJPROP_TEXT,
@@ -316,7 +319,7 @@ void ResetValues()
 //+------------------------------------------------------------------+
 bool IsNewBar()
   {
-   int bar_now = Bars(_Symbol, _Period);
+   int bar_now = Bars(_Symbol, RangePeriod);
    if(bars != bar_now)
      {
       bars = bar_now;
