@@ -17,7 +17,7 @@ offering enhanced clarity for market trend analysis.
 
 ## Features
 - **Delta Calculation**
-  <br/> Measures the net difference between buying and selling pressure for each bar.
+  <br/> Measures the net difference between buying and selling pressure.
 - **Bid and Ask**
   <br/> Provides clear visibility into the current market dynamics.
 - **Customizable Alerts**
@@ -41,12 +41,14 @@ offering enhanced clarity for market trend analysis.
 
 
 ## Inputs
+- **Range Period:** Select the time period for calculate the delta.
 - **Bid/Ask:** Enable or disable the show of Bid and Ask values on the chart.
 - **Alert Type:** Select the type of alert.
 - **Position Corner:** Corner of the chart where the indicator will be displayed (e.g., Top-Left, Bottom-Right).
 - **Position:** Position of the x and y distance from the corner.
-- **Colors:** Color sused to display positive and negative Delta values.
+- **Colors:** Color sused to display positive and negative delta values.
 - **Font Size:** Font size for all displayed text on the chart.
+
 
 ## Customization
 You can customize the name of the object by modifying the following text in the script.
@@ -62,10 +64,11 @@ string obj_ask_volume   = "AskVolume";
 ## Usage
 1. Attach the Delta to a chart in MetaTrader 5.
 2. Configure the input settings based on your trading preferences
+   - Choose the time range period.
    - Enable or disable the Bid/Ask display.
    - Choose the alert type and enable divergence alerts.
    - Customize the position, colors, and font size of the indicator.
-3. Monitor the Delta, Bid, and Ask values on the chart and receive alerts as needed.
+4. Monitor the Delta, Bid, and Ask values on the chart and receive alerts as needed.
 
 
 ## Script Code
@@ -90,18 +93,21 @@ enum ENUM_STATUS
 
 enum ENUM_ALERT
 {
- POPUP,   // Popup and Sound
- SOUND,   // Sound
- EMAIL,   // Email
- NOTI     // Notification
+ POPUP,    // Popup and Sound
+ SOUND,    // Sound
+ EMAIL,    // Email
+ NOTI      // Notification
 };
 
-input group "SETTINGS"
-input ENUM_STATUS           BidAsk_Status    = ENABLE;             // Show Bid & Ask
+input group "DATA"
+input ENUM_TIMEFRAMES       RangePeriod      = PERIOD_CURRENT;     // Range Period
+
+input group "OPTION"
+input ENUM_STATUS           ShowBidAsk       = DISABLE;            // Show Bid & Ask
 input ENUM_ALERT            AlertType        = POPUP;              // Alert type
 
 input group "ALERT"
-input ENUM_STATUS           Diverg_Status    = DISABLE;            // Delta divergence
+input ENUM_STATUS           DivergStatus     = DISABLE;            // Delta divergence
 
 input group "POSITION"
 input ENUM_BASE_CORNER      CornerPosition   = CORNER_LEFT_UPPER;  // Position
@@ -150,7 +156,7 @@ int OnInit()
    CreateObject(obj_delta_volume, NULL, TextColor);
 
    //-- Bid & Ask
-   if(BidAsk_Status == ENABLE)
+   if(ShowBidAsk == ENABLE)
      {
       CreateObject(obj_bid_volume, NULL, _PosColor);
       CreateObject(obj_ask_volume, NULL, _NegColor);
@@ -192,11 +198,11 @@ int OnCalculate(const int           rates_total,
 void onAlert()
   {
    //-- Delta Divergence Alert
-   if(Diverg_Status == ENABLE)
+   if(DivergStatus == ENABLE)
      {
       //+------------------------------------------------------------+
-      double open  = iOpen(_Symbol, _Period, 0);
-      double close = iClose(_Symbol, _Period, 0);
+      double open  = iOpen(_Symbol, RangePeriod, 0);
+      double close = iClose(_Symbol, RangePeriod, 0);
       //+------------------------------------------------------------+
 
       bool isBullishCandle = (close > open);
@@ -291,7 +297,7 @@ void UpdateDelta()
    ArrayFree(ticks);
    //+---------------------------------------------------------------+
    long count = CopyTicksRange(_Symbol, ticks, COPY_TICKS_TIME_MS, 
-                  ulong(iTime(_Symbol, _Period, 0)) * 1000);
+                  ulong(iTime(_Symbol, RangePeriod, 0)) * 1000);
    //+---------------------------------------------------------------+
    if(IsNewBar())
      {
@@ -314,7 +320,7 @@ void CalculateDelta(const double current_price)
   {
    if(!is_previous_price_set)
      {
-      previous_price = iClose(_Symbol, _Period, 1);
+      previous_price = iClose(_Symbol, RangePeriod, 1);
       is_previous_price_set = true;
      }
    //-- Bid [/]
@@ -359,7 +365,7 @@ void SetDeltaObject()
    ObjectSetString (0, obj_delta_volume, 
       OBJPROP_TEXT, "           " + FormatVolume(delta));
 
-   if(BidAsk_Status == ENABLE)
+   if(ShowBidAsk == ENABLE)
      {
       //-- Bid object
       ObjectSetString(0, obj_bid_volume, OBJPROP_TEXT,
@@ -389,7 +395,7 @@ void ResetValues()
 //+------------------------------------------------------------------+
 bool IsNewBar()
   {
-   int bar_now = Bars(_Symbol, _Period);
+   int bar_now = Bars(_Symbol, RangePeriod);
    if(bars != bar_now)
      {
       bars = bar_now;
